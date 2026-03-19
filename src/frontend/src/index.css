@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* CipherChat dark navy palette */
+    --background: 0.17 0.03 245;
+    --foreground: 0.93 0.018 240;
+    --card: 0.22 0.03 235;
+    --card-foreground: 0.93 0.018 240;
+    --popover: 0.24 0.025 230;
+    --popover-foreground: 0.93 0.018 240;
+    --primary: 0.55 0.17 255;
+    --primary-foreground: 0.98 0 0;
+    --secondary: 0.29 0.02 225;
+    --secondary-foreground: 0.93 0.018 240;
+    --muted: 0.27 0.025 230;
+    --muted-foreground: 0.68 0.025 235;
+    --accent: 0.33 0.02 230;
+    --accent-foreground: 0.93 0.018 240;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.3 0.02 235;
+    --input: 0.27 0.025 230;
+    --ring: 0.55 0.17 255;
+
+    /* Custom chat tokens */
+    --chat-nav: 0.15 0.03 245;
+    --chat-sidebar: 0.24 0.025 230;
+    --chat-messages: 0.28 0.022 228;
+    --chat-bubble-out: 0.53 0.17 255;
+    --chat-bubble-in: 0.33 0.02 230;
+    --chat-online: 0.72 0.17 150;
+    --chat-meta: 0.68 0.025 235;
+
+    --chart-1: 0.55 0.17 255;
+    --chart-2: 0.72 0.17 150;
+    --chart-3: 0.398 0.07 227.392;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.769 0.188 70.08;
+    --sidebar: 0.24 0.025 230;
+    --sidebar-foreground: 0.93 0.018 240;
+    --sidebar-primary: 0.55 0.17 255;
+    --sidebar-primary-foreground: 0.98 0 0;
+    --sidebar-accent: 0.29 0.02 225;
+    --sidebar-accent-foreground: 0.93 0.018 240;
+    --sidebar-border: 0.3 0.02 235;
+    --sidebar-ring: 0.55 0.17 255;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(var(--border));
+    border-radius: 99px;
+  }
+}
+
+@layer utilities {
+  .bg-chat-nav {
+    background-color: oklch(var(--chat-nav));
+  }
+  .bg-chat-sidebar {
+    background-color: oklch(var(--chat-sidebar));
+  }
+  .bg-chat-messages {
+    background-color: oklch(var(--chat-messages));
+  }
+  .bg-bubble-out {
+    background: linear-gradient(
+      135deg,
+      oklch(var(--chat-bubble-out)),
+      oklch(0.58 0.19 258)
+    );
+  }
+  .bg-bubble-in {
+    background-color: oklch(var(--chat-bubble-in));
+  }
+  .text-chat-meta {
+    color: oklch(var(--chat-meta));
+  }
+  .dot-online {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background-color: oklch(var(--chat-online));
+    flex-shrink: 0;
+  }
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes msg-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+@keyframes msg-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+@keyframes chat-open {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  65% {
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@layer utilities {
+  .animate-msg-in-right {
+    animation: msg-in-right 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  }
+  .animate-msg-in-left {
+    animation: msg-in-left 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  }
+  .animate-chat-open {
+    animation: chat-open 220ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  }
+  .animate-fade-in {
+    animation: fade-in 250ms ease-out both;
+  }
+  .animate-fade-up {
+    animation: fade-up 350ms ease-out both;
+  }
+  .animate-pop-in {
+    animation: pop-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
