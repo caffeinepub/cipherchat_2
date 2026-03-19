@@ -22,12 +22,14 @@ export interface Message {
 export interface backendInterface {
     getConversation(user1: UserId, user2: UserId): Promise<Array<Message>>;
     getPublicKey(username: string): Promise<PublicKey | null>;
+    getLastSeen(username: string): Promise<Time | null>;
     listUsers(): Promise<Array<string>>;
     loginUser(username: string, passwordHash: string): Promise<boolean>;
     purgeExpiredMessages(): Promise<bigint>;
     registerUser(username: string, passwordHash: string): Promise<void>;
-    sendMessage(sender: UserId, senderPasswordHash: string, recipient: UserId, content: string, isImage: boolean): Promise<MessageId>;
-    storePublicKey(username: string, passwordHash: string, publicKey: PublicKey): Promise<void>;
-    unsendMessage(messageId: MessageId, username: string, passwordHash: string): Promise<void>;
+    sendMessage(sender: UserId, recipient: UserId, content: string, isImage: boolean): Promise<MessageId>;
+    storePublicKey(username: string, publicKey: PublicKey): Promise<void>;
+    unsendMessage(messageId: MessageId): Promise<void>;
     userExists(username: string): Promise<boolean>;
+    heartbeat(username: string): Promise<void>;
 }

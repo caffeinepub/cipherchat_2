@@ -47,6 +47,7 @@ actor {
   let users = Map.empty<UserId, User>();
   let messages = Map.empty<MessageId, Message>();
   let publicKeys = Map.empty<UserId, PublicKey>();
+  let lastSeenMap = Map.empty<UserId, Time.Time>();
 
   // Kept for stable variable compatibility with previous deployment
   let userPrincipals = Map.empty<Principal, UserId>();
@@ -54,18 +55,6 @@ actor {
 
   var nextMessageId = 0;
   var nextImageId = 0; // kept for stable variable compatibility
-
-  // Helper: verify credentials, trap if invalid
-  func verifyCredentials(username : Text, passwordHash : Text) {
-    switch (users.get(username)) {
-      case (null) { Runtime.trap("Invalid credentials") };
-      case (?user) {
-        if (user.passwordHash != passwordHash) {
-          Runtime.trap("Invalid credentials");
-        };
-      };
-    };
-  };
 
   // Register a new user
   public shared func registerUser(username : Text, passwordHash : Text) : async () {
@@ -96,9 +85,8 @@ actor {
     users.containsKey(username);
   };
 
-  // Store public key - verified by password
-  public shared func storePublicKey(username : Text, passwordHash : Text, publicKey : PublicKey) : async () {
-    verifyCredentials(username, passwordHash);
+  // Store public key - no password required (key is non-secret)
+  public shared func storePublicKey(username : Text, publicKey : PublicKey) : async () {
     switch (users.get(username)) {
       case (null) { Runtime.trap("User does not exist") };
       case (?_) { publicKeys.add(username, publicKey) };
@@ -110,37 +98,40 @@ actor {
     publicKeys.get(username);
   };
 
-  // Send a message - verified by sender's password
-  public shared func sendMessage(sender : UserId, senderPasswordHash : Text, recipient : UserId, content : Text, isImage : Bool) : async MessageId {
-    verifyCredentials(sender, senderPasswordHash);
+  // Send a message - sender name is trusted (security via E2EE)
+  public shared func sendMessage(sender : UserId, recipient : UserId, content : Text, isImage : Bool) : async MessageId {
+    switch (users.get(sender)) {
+      case (null) { Runtime.trap("Sender does not exist") };
+      case (?_) {};
+    };
     switch (users.get(recipient)) {
       case (null) { Runtime.trap("Recipient does not exist") };
-      case (?_) {
-        let messageId = nextMessageId;
-        let message : Message = {
-          id = messageId;
-          sender;
-          recipient;
-          content;
-          timestamp = Time.now();
-          isImage;
-        };
-        messages.add(messageId, message);
-        nextMessageId += 1;
-        messageId;
-      };
+      case (?_) {};
     };
+    let messageId = nextMessageId;
+    let message : Message = {
+      id = messageId;
+      sender;
+      recipient;
+      content;
+      timestamp = Time.now();
+      isImage;
+    };
+    messages.add(messageId, message);
+    nextMessageId += 1;
+    messageId;
   };
 
-  // Unsend a message - verified by sender's password
-  public shared func unsendMessage(messageId : MessageId, username : Text, passwordHash : Text) : async () {
-    verifyCredentials(username, passwordHash);
+  // Get a single message by ID
+  public query func getMessage(messageId : MessageId) : async ?Message {
+    messages.get(messageId);
+  };
+
+  // Unsend a message
+  public shared func unsendMessage(messageId : MessageId) : async () {
     switch (messages.get(messageId)) {
       case (null) { Runtime.trap("Message does not exist") };
-      case (?message) {
-        if (message.sender != username) {
-          Runtime.trap("Unauthorized: You can only unsend your own messages");
-        };
+      case (?_) {
         messages.remove(messageId);
       };
     };
@@ -166,5 +157,18 @@ actor {
       ((m.sender == user1 and m.recipient == user2) or (m.sender == user2 and m.recipient == user1))
       and m.timestamp >= cutoff
     });
+  };
+
+  // Heartbeat: update last seen timestamp for online status
+  public shared func heartbeat(username : Text) : async () {
+    switch (users.get(username)) {
+      case (null) {}; // ignore unknown users
+      case (?_) { lastSeenMap.add(username, Time.now()) };
+    };
+  };
+
+  // Get last seen time for a user
+  public query func getLastSeen(username : Text) : async ?Time.Time {
+    lastSeenMap.get(username);
   };
 };

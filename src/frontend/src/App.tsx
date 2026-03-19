@@ -480,8 +480,7 @@ function AuthScreen({
 function ChatApp({
   currentUser,
   onLogout,
-  passwordHash,
-}: { currentUser: string; onLogout: () => void; passwordHash: string }) {
+}: { currentUser: string; onLogout: () => void }) {
   const { actor, isFetching } = useActor();
   const [users, setUsers] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -494,6 +493,7 @@ function ChatApp({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [encryptingImage, setEncryptingImage] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Unsend context menu
@@ -517,12 +517,50 @@ function ChatApp({
   );
   const imageObjectUrlsRef = useRef<Map<string, string>>(new Map());
 
+  // Online status tracking
+  const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>({});
+
   useEffect(() => {
     const urls = imageObjectUrlsRef.current;
     return () => {
       for (const url of urls.values()) URL.revokeObjectURL(url);
     };
   }, []);
+
+  // Heartbeat: tell backend we are online every 30s
+  useEffect(() => {
+    if (!actor || isFetching || !currentUser) return;
+    (actor as any).heartbeat?.(currentUser)?.catch?.(() => {});
+    const interval = setInterval(() => {
+      (actor as any).heartbeat?.(currentUser)?.catch?.(() => {});
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [actor, isFetching, currentUser]);
+
+  // Poll last seen for all users every 15s
+  useEffect(() => {
+    if (!actor || isFetching || users.length === 0) return;
+    const fetchLastSeen = async () => {
+      const entries = await Promise.all(
+        users.map(async (u) => {
+          try {
+            const ts = await (actor as any).getLastSeen?.(u);
+            if (ts == null) return [u, 0] as [string, number];
+            return [
+              u,
+              Number(BigInt(ts as unknown as bigint) / 1_000_000n),
+            ] as [string, number];
+          } catch {
+            return [u, 0] as [string, number];
+          }
+        }),
+      );
+      setLastSeenMap(Object.fromEntries(entries));
+    };
+    fetchLastSeen();
+    const interval = setInterval(fetchLastSeen, 15_000);
+    return () => clearInterval(interval);
+  }, [actor, isFetching, users]);
 
   // Close unsend menu when clicking outside
   useEffect(() => {
@@ -548,7 +586,7 @@ function ChatApp({
         publicKeyRef.current = pair.publicKey;
         const pubB64 = await exportPublicKey(pair.publicKey);
         if (cancelled) return;
-        await (actor as any).storePublicKey(currentUser, passwordHash, pubB64);
+        await actor!.storePublicKey(currentUser, pubB64);
         setCryptoReady(true);
       } catch (err) {
         console.error("Crypto init failed", err);
@@ -560,7 +598,7 @@ function ChatApp({
     return () => {
       cancelled = true;
     };
-  }, [actor, isFetching, currentUser, passwordHash]);
+  }, [actor, isFetching, currentUser]);
 
   // Fetch users
   const fetchUsers = useCallback(async () => {
@@ -597,7 +635,7 @@ function ChatApp({
   // When conversation opens: purge expired messages (fire and forget)
   useEffect(() => {
     if (!actor || !selectedUser) return;
-    (actor as any)
+    actor
       .purgeExpiredMessages()
       .catch((err) => console.warn("purgeExpiredMessages failed", err));
   }, [actor, selectedUser]);
@@ -718,13 +756,29 @@ function ChatApp({
     });
   }, [messages]);
 
-  // Auto-scroll
+  // Auto-scroll to bottom when messages change
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on message count change
   useEffect(() => {
-    scrollRef.current?.scrollIntoView?.({ block: "end" });
-    if (scrollRef.current)
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+    const el = bottomRef.current;
+    if (!el) return;
+    // Use a short delay to ensure DOM has rendered before scrolling
+    const id = setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 50);
+    return () => clearTimeout(id);
+  }, [messages, decryptedMessages]);
+
+  // Online status helper
+  const getOnlineStatus = (username: string): string => {
+    const lastSeen = lastSeenMap[username];
+    if (!lastSeen) return "Offline";
+    const now = Date.now();
+    const diff = now - lastSeen;
+    if (diff < 60_000) return "Online";
+    if (diff < 3_600_000)
+      return `last seen ${Math.floor(diff / 60_000)} min ago`;
+    return `last seen ${Math.floor(diff / 3_600_000)} hr ago`;
+  };
 
   // Unsend handler
   const handleUnsend = useCallback(
@@ -732,18 +786,14 @@ function ChatApp({
       if (!actor) return;
       setUnsendMenuId(null);
       try {
-        await (actor as any).unsendMessage(
-          BigInt(msgId),
-          currentUser,
-          passwordHash,
-        );
+        await actor.unsendMessage(BigInt(msgId));
         setMessages((prev) => prev.filter((m) => String(m.id) !== msgId));
       } catch (err) {
         toast.error("Failed to unsend message.");
         console.error(err);
       }
     },
-    [actor, currentUser, passwordHash],
+    [actor],
   );
 
   const handleSend = async (e: React.FormEvent) => {
@@ -786,13 +836,7 @@ function ChatApp({
           return;
         }
       }
-      await (actor as any).sendMessage(
-        currentUser,
-        passwordHash,
-        selectedUser,
-        content,
-        false,
-      );
+      await actor.sendMessage(currentUser, selectedUser, content, false);
       await fetchMessages();
     } catch (err) {
       toast.error("Failed to send message");
@@ -856,9 +900,8 @@ function ChatApp({
         senderKey,
         recipientKey,
       };
-      await (actor as any).sendMessage(
+      await actor.sendMessage(
         currentUser,
-        passwordHash,
         selectedUser,
         JSON.stringify(envelope),
         true,
@@ -1029,17 +1072,19 @@ function ChatApp({
                           >
                             {getInitials(user)}
                           </div>
-                          <span
-                            className="dot-online absolute bottom-0 right-0 border-2"
-                            style={{ borderColor: "oklch(0.24 0.025 230)" }}
-                          />
+                          {getOnlineStatus(user) === "Online" && (
+                            <span
+                              className="dot-online absolute bottom-0 right-0 border-2"
+                              style={{ borderColor: "oklch(0.24 0.025 230)" }}
+                            />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">
                             {user}
                           </p>
                           <p className="text-xs text-chat-meta truncate">
-                            {user}
+                            {getOnlineStatus(user)}
                           </p>
                         </div>
                       </button>
@@ -1084,16 +1129,20 @@ function ChatApp({
                     >
                       {getInitials(selectedUser)}
                     </div>
-                    <span
-                      className="dot-online absolute bottom-0 right-0 border-2"
-                      style={{ borderColor: "oklch(0.22 0.03 235)" }}
-                    />
+                    {getOnlineStatus(selectedUser) === "Online" && (
+                      <span
+                        className="dot-online absolute bottom-0 right-0 border-2"
+                        style={{ borderColor: "oklch(0.22 0.03 235)" }}
+                      />
+                    )}
                   </div>
                   <div className="flex-1">
                     <p className="font-semibold text-foreground text-sm">
                       {selectedUser}
                     </p>
-                    <p className="text-xs text-chat-meta">Online</p>
+                    <p className="text-xs text-chat-meta">
+                      {getOnlineStatus(selectedUser)}
+                    </p>
                   </div>
                   <div
                     className="flex items-center gap-1 px-2 py-1 rounded-full text-xs"
@@ -1235,6 +1284,7 @@ function ChatApp({
                       );
                     })
                   )}
+                  <div ref={bottomRef} />
                 </div>
 
                 {/* Composer */}
@@ -1525,20 +1575,12 @@ export default function App() {
     return localStorage.getItem("cc_user");
   });
 
-  const [passwordHash, setPasswordHash] = useState<string>(
-    () => localStorage.getItem("cc_phash") ?? "",
-  );
-
-  const handleLogin = (username: string, hash: string) => {
-    localStorage.setItem("cc_phash", hash);
-    setPasswordHash(hash);
+  const handleLogin = (username: string, _hash: string) => {
     setCurrentUser(username);
   };
   const handleLogout = () => {
     localStorage.removeItem("cc_user");
-    localStorage.removeItem("cc_phash");
     setCurrentUser(null);
-    setPasswordHash("");
   };
 
   return (
@@ -1546,11 +1588,7 @@ export default function App() {
       <Toaster richColors position="top-right" />
       {currentUser ? (
         <div key="chat" className="animate-fade-in">
-          <ChatApp
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            passwordHash={passwordHash}
-          />
+          <ChatApp currentUser={currentUser} onLogout={handleLogout} />
         </div>
       ) : (
         <div key="auth" className="animate-fade-in">
