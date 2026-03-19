@@ -4,11 +4,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Toaster } from "@/components/ui/sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  ArrowLeft,
   ImageIcon,
   Loader2,
   Lock,
   LockOpen,
   LogOut,
+  Menu,
   MessageSquare,
   Search,
   Send,
@@ -194,7 +196,9 @@ function useLongPress(onLongPress: () => void, delay = 600) {
 }
 
 // ── Auth Screen ───────────────────────────────────────────────────────────────
-function AuthScreen({ onLogin }: { onLogin: (username: string) => void }) {
+function AuthScreen({
+  onLogin,
+}: { onLogin: (username: string, hash: string) => void }) {
   const { actor, isFetching } = useActor();
   const [tab, setTab] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState("");
@@ -204,8 +208,18 @@ function AuthScreen({ onLogin }: { onLogin: (username: string) => void }) {
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!actor || isFetching) return;
-      if (!username.trim() || !password) {
+      if (!actor) {
+        toast.error(
+          "App is still connecting. Please wait a moment and try again.",
+        );
+        return;
+      }
+      if (isFetching) {
+        toast.error("Connecting to server, please wait…");
+        return;
+      }
+      const trimmedUser = username.trim();
+      if (!trimmedUser || !password) {
         toast.error("Please fill in all fields");
         return;
       }
@@ -213,23 +227,47 @@ function AuthScreen({ onLogin }: { onLogin: (username: string) => void }) {
       try {
         const hash = await hashPassword(password);
         if (tab === "signup") {
-          const exists = await actor.userExists(username.trim());
-          if (exists) {
-            toast.error("Username already taken");
+          try {
+            await actor.registerUser(trimmedUser, hash);
+          } catch (regErr) {
+            const msg = String(regErr);
+            if (
+              msg.includes("already taken") ||
+              msg.includes("already exists")
+            ) {
+              toast.error(
+                "Username already taken. Please choose a different one.",
+              );
+            } else {
+              toast.error(
+                `Sign up failed: ${msg.split("\n")[0].slice(0, 120)}`,
+              );
+            }
             return;
           }
-          await actor.registerUser(username.trim(), hash);
           toast.success("Account created! Logging you in…");
         }
-        const ok = await actor.loginUser(username.trim(), hash);
+        let ok = false;
+        try {
+          ok = await actor.loginUser(trimmedUser, hash);
+        } catch (loginErr) {
+          const msg = String(loginErr);
+          toast.error(`Login failed: ${msg.split("\n")[0].slice(0, 120)}`);
+          return;
+        }
         if (ok) {
-          localStorage.setItem("cc_user", username.trim());
-          onLogin(username.trim());
+          localStorage.setItem("cc_user", trimmedUser);
+          onLogin(trimmedUser, hash);
         } else {
-          toast.error("Invalid username or password");
+          toast.error("Invalid username or password.");
         }
       } catch (err) {
-        toast.error("Something went wrong. Please try again.");
+        const msg = String(err);
+        toast.error(
+          msg.length > 10
+            ? msg.split("\n")[0].slice(0, 150)
+            : "Something went wrong. Please try again.",
+        );
         console.error(err);
       } finally {
         setLoading(false);
@@ -442,10 +480,12 @@ function AuthScreen({ onLogin }: { onLogin: (username: string) => void }) {
 function ChatApp({
   currentUser,
   onLogout,
-}: { currentUser: string; onLogout: () => void }) {
+  passwordHash,
+}: { currentUser: string; onLogout: () => void; passwordHash: string }) {
   const { actor, isFetching } = useActor();
   const [users, setUsers] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
@@ -508,7 +548,7 @@ function ChatApp({
         publicKeyRef.current = pair.publicKey;
         const pubB64 = await exportPublicKey(pair.publicKey);
         if (cancelled) return;
-        await actor!.storePublicKey(currentUser, pubB64);
+        await (actor as any).storePublicKey(currentUser, passwordHash, pubB64);
         setCryptoReady(true);
       } catch (err) {
         console.error("Crypto init failed", err);
@@ -520,7 +560,7 @@ function ChatApp({
     return () => {
       cancelled = true;
     };
-  }, [actor, isFetching, currentUser]);
+  }, [actor, isFetching, currentUser, passwordHash]);
 
   // Fetch users
   const fetchUsers = useCallback(async () => {
@@ -554,11 +594,6 @@ function ChatApp({
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
-
-  useEffect(() => {
-    if (users.length > 0 && !selectedUser) setSelectedUser(users[0]);
-  }, [users, selectedUser]);
-
   // When conversation opens: purge expired messages (fire and forget)
   useEffect(() => {
     if (!actor || !selectedUser) return;
@@ -697,14 +732,18 @@ function ChatApp({
       if (!actor) return;
       setUnsendMenuId(null);
       try {
-        await (actor as any).unsendMessage(BigInt(msgId));
+        await (actor as any).unsendMessage(
+          BigInt(msgId),
+          currentUser,
+          passwordHash,
+        );
         setMessages((prev) => prev.filter((m) => String(m.id) !== msgId));
       } catch (err) {
         toast.error("Failed to unsend message.");
         console.error(err);
       }
     },
-    [actor],
+    [actor, currentUser, passwordHash],
   );
 
   const handleSend = async (e: React.FormEvent) => {
@@ -717,10 +756,15 @@ function ChatApp({
       let content = text;
       if (cryptoReady && publicKeyRef.current && privateKeyRef.current) {
         try {
-          const recipientPubB64 = await actor.getPublicKey(selectedUser);
+          let recipientPubB64: string | null = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            recipientPubB64 = await actor.getPublicKey(selectedUser);
+            if (recipientPubB64) break;
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
+          }
           if (!recipientPubB64) {
             toast.error(
-              "Cannot send: recipient's encryption key is not available yet.",
+              "Cannot send: recipient needs to log in once to register their encryption key.",
             );
             setMessageText(text);
             setSending(false);
@@ -742,7 +786,13 @@ function ChatApp({
           return;
         }
       }
-      await actor.sendMessage(currentUser, selectedUser, content, false);
+      await (actor as any).sendMessage(
+        currentUser,
+        passwordHash,
+        selectedUser,
+        content,
+        false,
+      );
       await fetchMessages();
     } catch (err) {
       toast.error("Failed to send message");
@@ -779,9 +829,16 @@ function ChatApp({
     setEncryptingImage(true);
     try {
       const rawData = await file.arrayBuffer();
-      const recipientPubB64 = await actor.getPublicKey(selectedUser);
+      let recipientPubB64: string | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        recipientPubB64 = await actor.getPublicKey(selectedUser);
+        if (recipientPubB64) break;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
+      }
       if (!recipientPubB64) {
-        toast.error("Recipient has no encryption key. Cannot send image.");
+        toast.error(
+          "Recipient needs to log in once to register their encryption key.",
+        );
         return;
       }
       const recipientPubKey = await importPublicKey(recipientPubB64);
@@ -799,8 +856,9 @@ function ChatApp({
         senderKey,
         recipientKey,
       };
-      await actor.sendMessage(
+      await (actor as any).sendMessage(
         currentUser,
+        passwordHash,
         selectedUser,
         JSON.stringify(envelope),
         true,
@@ -832,6 +890,18 @@ function ChatApp({
       <header className="bg-chat-nav border-b border-border sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-8 w-8 text-chat-meta hover:text-foreground"
+              onClick={() => {
+                setSidebarOpen(true);
+                setSelectedUser(null);
+              }}
+              title="Open contacts"
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
             <div
               className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
               style={{ background: "oklch(0.55 0.17 255)" }}
@@ -889,7 +959,7 @@ function ChatApp({
         </div>
       </header>
 
-      <main className="relative flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex">
+      <main className="relative flex-1 max-w-7xl w-full mx-auto md:px-4 md:py-6 flex">
         <div
           className="flex-1 rounded-2xl border border-border shadow-card overflow-hidden flex"
           style={{
@@ -899,7 +969,7 @@ function ChatApp({
         >
           {/* Sidebar */}
           <aside
-            className="w-72 flex-shrink-0 border-r border-border flex flex-col"
+            className={`${sidebarOpen ? "flex" : "hidden"} md:flex w-full md:w-72 flex-shrink-0 border-r border-border flex-col`}
             style={{ background: "oklch(0.24 0.025 230)" }}
           >
             <div className="p-4 border-b border-border">
@@ -944,7 +1014,10 @@ function ChatApp({
                       <button
                         type="button"
                         data-ocid={`sidebar.item.${i + 1}`}
-                        onClick={() => setSelectedUser(user)}
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setSidebarOpen(false);
+                        }}
                         className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all duration-150 hover:bg-accent/50 hover:scale-[1.015] active:scale-[0.99] ${
                           selectedUser === user ? "bg-accent/70" : ""
                         }`}
@@ -979,7 +1052,7 @@ function ChatApp({
 
           {/* Conversation panel */}
           <section
-            className="flex-1 flex flex-col"
+            className={`${sidebarOpen ? "hidden md:flex" : "flex"} flex-1 flex-col`}
             style={{ background: "oklch(0.28 0.022 228)" }}
           >
             {selectedUser ? (
@@ -992,6 +1065,18 @@ function ChatApp({
                   className="px-5 py-3.5 border-b border-border flex items-center gap-3"
                   style={{ background: "oklch(0.22 0.03 235)" }}
                 >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="md:hidden h-8 w-8 text-chat-meta hover:text-foreground flex-shrink-0"
+                    onClick={() => {
+                      setSidebarOpen(true);
+                      setSelectedUser(null);
+                    }}
+                    title="Back to contacts"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </Button>
                   <div className="relative flex-shrink-0">
                     <div
                       className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
@@ -1440,10 +1525,20 @@ export default function App() {
     return localStorage.getItem("cc_user");
   });
 
-  const handleLogin = (username: string) => setCurrentUser(username);
+  const [passwordHash, setPasswordHash] = useState<string>(
+    () => localStorage.getItem("cc_phash") ?? "",
+  );
+
+  const handleLogin = (username: string, hash: string) => {
+    localStorage.setItem("cc_phash", hash);
+    setPasswordHash(hash);
+    setCurrentUser(username);
+  };
   const handleLogout = () => {
     localStorage.removeItem("cc_user");
+    localStorage.removeItem("cc_phash");
     setCurrentUser(null);
+    setPasswordHash("");
   };
 
   return (
@@ -1451,7 +1546,11 @@ export default function App() {
       <Toaster richColors position="top-right" />
       {currentUser ? (
         <div key="chat" className="animate-fade-in">
-          <ChatApp currentUser={currentUser} onLogout={handleLogout} />
+          <ChatApp
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            passwordHash={passwordHash}
+          />
         </div>
       ) : (
         <div key="auth" className="animate-fade-in">

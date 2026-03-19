@@ -144,6 +144,8 @@ export interface backendInterface {
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     sendMessage(sender: UserId, recipient: UserId, content: string, isImage: boolean): Promise<MessageId>;
     storePublicKey(username: string, publicKey: PublicKey): Promise<void>;
+    purgeExpiredMessages(): Promise<bigint>;
+    unsendMessage(messageId: MessageId): Promise<void>;
     userExists(username: string): Promise<boolean>;
 }
 import type { Message as _Message, PublicKey as _PublicKey, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
@@ -468,6 +470,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.storePublicKey(arg0, arg1);
+            return result;
+        }
+    }
+    async purgeExpiredMessages(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.purgeExpiredMessages();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.purgeExpiredMessages();
+            return result;
+        }
+    }
+    async unsendMessage(arg0: MessageId): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.unsendMessage(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.unsendMessage(arg0);
             return result;
         }
     }

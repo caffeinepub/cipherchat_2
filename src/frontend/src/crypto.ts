@@ -81,7 +81,7 @@ const RSA_PARAMS: RsaHashedKeyGenParams = {
 };
 
 export async function generateKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(RSA_PARAMS, false, ["encrypt", "decrypt"]);
+  return crypto.subtle.generateKey(RSA_PARAMS, true, ["encrypt", "decrypt"]);
 }
 
 export async function exportPublicKey(key: CryptoKey): Promise<string> {

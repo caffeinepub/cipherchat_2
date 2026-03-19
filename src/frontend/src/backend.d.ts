@@ -19,32 +19,15 @@ export interface Message {
     sender: UserId;
     timestamp: Time;
 }
-export interface UserProfile {
-    username: string;
-}
-export enum UserRole {
-    admin = "admin",
-    user = "user",
-    guest = "guest"
-}
 export interface backendInterface {
-    assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
-    deleteUser(username: string): Promise<void>;
-    getCallerUserProfile(): Promise<UserProfile | null>;
-    getCallerUserRole(): Promise<UserRole>;
     getConversation(user1: UserId, user2: UserId): Promise<Array<Message>>;
-    getMessage(messageId: MessageId): Promise<Message | null>;
     getPublicKey(username: string): Promise<PublicKey | null>;
-    getUserProfile(user: Principal): Promise<UserProfile | null>;
-    grantUserRole(userPrincipal: Principal): Promise<void>;
-    isCallerAdmin(): Promise<boolean>;
     listUsers(): Promise<Array<string>>;
     loginUser(username: string, passwordHash: string): Promise<boolean>;
     purgeExpiredMessages(): Promise<bigint>;
     registerUser(username: string, passwordHash: string): Promise<void>;
-    saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    sendMessage(sender: UserId, recipient: UserId, content: string, isImage: boolean): Promise<MessageId>;
-    storePublicKey(username: string, publicKey: PublicKey): Promise<void>;
-    unsendMessage(messageId: MessageId): Promise<void>;
+    sendMessage(sender: UserId, senderPasswordHash: string, recipient: UserId, content: string, isImage: boolean): Promise<MessageId>;
+    storePublicKey(username: string, passwordHash: string, publicKey: PublicKey): Promise<void>;
+    unsendMessage(messageId: MessageId, username: string, passwordHash: string): Promise<void>;
     userExists(username: string): Promise<boolean>;
 }

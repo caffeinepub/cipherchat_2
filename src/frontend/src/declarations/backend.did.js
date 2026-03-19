@@ -81,7 +81,8 @@ export const idlService = IDL.Service({
   'grantUserRole' : IDL.Func([IDL.Principal], [], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'listUsers' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
-  'loginUser' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], ['query']),
+  'loginUser' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], []),
+  'purgeExpiredMessages' : IDL.Func([], [IDL.Nat], []),
   'registerUser' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'sendMessage' : IDL.Func(
@@ -90,6 +91,7 @@ export const idlService = IDL.Service({
       [],
     ),
   'storePublicKey' : IDL.Func([IDL.Text, PublicKey], [], []),
+  'unsendMessage' : IDL.Func([MessageId], [], []),
   'userExists' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
 });
 
@@ -173,7 +175,8 @@ export const idlFactory = ({ IDL }) => {
     'grantUserRole' : IDL.Func([IDL.Principal], [], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'listUsers' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
-    'loginUser' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], ['query']),
+    'loginUser' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], []),
+    'purgeExpiredMessages' : IDL.Func([], [IDL.Nat], []),
     'registerUser' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'sendMessage' : IDL.Func(
@@ -182,6 +185,7 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'storePublicKey' : IDL.Func([IDL.Text, PublicKey], [], []),
+    'unsendMessage' : IDL.Func([MessageId], [], []),
     'userExists' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
   });
 };
