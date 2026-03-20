@@ -768,6 +768,22 @@ function ChatApp({
     return () => clearTimeout(id);
   }, [messages, decryptedMessages]);
 
+  // Scroll to bottom when keyboard opens (mobile)
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handler = () => {
+      const el = bottomRef.current;
+      if (el)
+        setTimeout(
+          () => el.scrollIntoView({ behavior: "smooth", block: "end" }),
+          50,
+        );
+    };
+    vv.addEventListener("resize", handler);
+    return () => vv.removeEventListener("resize", handler);
+  }, []);
+
   // Online status helper
   const getOnlineStatus = (username: string): string => {
     const lastSeen = lastSeenMap[username];
@@ -921,7 +937,7 @@ function ChatApp({
   );
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-dvh overflow-hidden bg-background flex flex-col">
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
@@ -1002,12 +1018,11 @@ function ChatApp({
         </div>
       </header>
 
-      <main className="relative flex-1 max-w-7xl w-full mx-auto md:px-4 md:py-6 flex">
+      <main className="relative flex-1 min-h-0 max-w-7xl w-full mx-auto md:px-4 md:py-6 flex overflow-hidden">
         <div
           className="flex-1 rounded-2xl border border-border shadow-card overflow-hidden flex"
           style={{
             background: "oklch(0.22 0.03 235)",
-            minHeight: "calc(100vh - 7.5rem)",
           }}
         >
           {/* Sidebar */}
@@ -1103,7 +1118,7 @@ function ChatApp({
             {selectedUser ? (
               <div
                 key={selectedUser}
-                className="animate-chat-open flex-1 flex flex-col overflow-hidden"
+                className="animate-chat-open flex-1 min-h-0 flex flex-col overflow-hidden"
               >
                 {/* Chat header */}
                 <div
@@ -1172,7 +1187,7 @@ function ChatApp({
                 {/* Messages */}
                 <div
                   ref={scrollRef}
-                  className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-2"
+                  className="flex-1 min-h-0 overflow-y-auto px-5 py-4 flex flex-col gap-2"
                   data-ocid="chat.panel"
                 >
                   {loadingMessages && messages.length === 0 ? (
@@ -1390,7 +1405,7 @@ function ChatApp({
         </div>
       </main>
 
-      <footer className="relative text-center text-xs text-chat-meta py-4">
+      <footer className="relative text-center text-xs text-chat-meta py-4 hidden md:block">
         © {new Date().getFullYear()}. Built with{" "}
         <span style={{ color: "oklch(0.72 0.17 30)" }}>♥</span> using{" "}
         <a
